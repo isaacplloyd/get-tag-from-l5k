@@ -6,15 +6,36 @@ class Tag:
 		self.safety = safety
 		self.value = value
 
-	#Create tag object from string, optionally starting with '\t' characters
+	#Create tag object from string
 	def from_string(self, input_str):
 			name_end = input_str.find(':')
 			self.name = input_str[:name_end]
 			type_end = input_str.find('(')
 			self.type = input_str[name_end+1:type_end]
-			value_start = input_str.find('):=') + 3
-			self.value = input_str[value_start:]
+			self.value_start = input_str.find('):=') + 3
+			self.value = input_str[self.value_start:]
+			self.values = self.get_value_list()
 			return self
+	def get_value_list(self):
+		process_str = self.value.replace("[","")
+		process_str = process_str.replace("]","")
+		return process_str.split(",")
+	def set_value(self, set_v, value_index):
+		self.values[value_index] = set_v
+	def set_values(self, set_vs):
+		values_to_set = len(set_vs)
+		for i in range(0,values_to_set):
+			self.set_value(set_vs[i], i)
+	def generate_value_string(self):
+		process_str = "["
+		process_str = process_str + self.values[0]
+		for i in range(1, len(self.values)-2):
+			process_str = process_str + "," + self.values[i]
+		process_str = process_str + self.values[len(self.values)-1]
+		process_str = process_str + "]"
+		return process_str
+	def set_value_string(self):
+		self.value = self.generate_value_string()
 		
 def find_tag_start(file_contents):
 	return file_contents.find('\n\tTAG') + 7

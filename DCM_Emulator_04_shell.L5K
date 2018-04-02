@@ -1,0 +1,894 @@
+﻿(*********************************************
+
+  Import-Export
+  Version   := RSLogix 5000 v30.00
+  Owner     := Isaac Lloyd, Alliant Technologies
+  Exported  := Mon Apr  2 16:29:23 2018
+
+  Note:  File encoded in UTF-8.  Only edit file in a program 
+         which supports UTF-8 (like Notepad, not Wordpad).
+
+**********************************************)
+IE_VER := 2.21;
+
+CONTROLLER DCM_Emulator (ProcessorType := "1756-L83E",
+                         Major := 30,
+                         CommPath := "DcmTest\192.168.11.111\Backplane\3\A\192.168.1.10",
+                         RedundancyEnabled := 0,
+                         KeepTestEditsOnSwitchOver := 0,
+                         SecurityCode := 0,
+                         ChangesToDetect := 16#ffff_ffff_ffff_ffff,
+                         SFCExecutionControl := "CurrentActive",
+                         SFCRestartPosition := "MostRecent",
+                         SFCLastScan := "DontScan",
+                         SerialNumber := 16#00d1_9235,
+                         MatchProjectToController := No,
+                         CanUseRPIFromProducer := No,
+                         InhibitAutomaticFirmwareUpdate := 0,
+                         PassThroughConfiguration := EnabledWithAppend,
+                         DownloadProjectDocumentationAndExtendedProperties := Yes,
+                         ReportMinorOverflow := 0)
+	DATATYPE CfgDivert (FamilyType := NoFamily)
+		DINT Offset (Description := "Pulses from beginning of sorter (2mm per pulse)");
+	END_DATATYPE
+
+	DATATYPE CfgGeneral (FamilyType := NoFamily)
+		DINT Diverters (Description := "Number of diverters to emulate");
+		DINT PinSpacing (Description := "Distance from pin to pin (mm)");
+		DINT PinWidth (Description := "Diameter of pins (mm)");
+		DINT SorterSpeed (Description := "Set speed of sorter (mm/sec)");
+		DINT Acceleration (Description := "Max accel/decel of sorter (mm/sec^2)");
+		DINT Resolution (Description := "Micro-meters per encoder transition");
+		DINT Length (Description := "Length of sorter (mm)");
+		SINT ZZZZZZZZZZCfgGeneral7 (Hidden := 1);
+		BIT GetMaxMins ZZZZZZZZZZCfgGeneral7 : 0 (Description := "Keep track of diverters$' all-time max/min response times");
+	END_DATATYPE
+
+	DATATYPE Divert (FamilyType := NoFamily)
+		DINT OnTimestamp (Description := "Timestamp from last Prox1 off->on transition");
+		DINT OffTimestamp (Description := "Timestamp from last Prox1 on->off transition");
+		uSecondTmr MicroTmr;
+		SINT ZZZZZZZZZZDivert3 (Hidden := 1);
+		BIT Out_Prox1 ZZZZZZZZZZDivert3 : 0;
+		BIT Out_Prox2 ZZZZZZZZZZDivert3 : 1;
+		BIT In_Extend ZZZZZZZZZZDivert3 : 2;
+		BIT In_Retract ZZZZZZZZZZDivert3 : 3;
+		BIT WaitingForExtendOn ZZZZZZZZZZDivert3 : 4;
+		BIT WaitingForExtendOff ZZZZZZZZZZDivert3 : 5;
+		BIT WaitingForRetractOn ZZZZZZZZZZDivert3 : 6;
+		BIT WaitingForRetractOff ZZZZZZZZZZDivert3 : 7;
+	END_DATATYPE
+
+	DATATYPE DivertStatistics (FamilyType := NoFamily)
+		DivResponseTime LastResponse;
+		DivResponseTime MinResponse;
+		DivResponseTime MaxResponse;
+	END_DATATYPE
+
+	DATATYPE DivResponseTime (FamilyType := NoFamily)
+		DINT ExtendOn;
+		DINT ExtendOff;
+		DINT RetractOn;
+		DINT RetractOff;
+	END_DATATYPE
+
+	DATATYPE Hmi (FamilyType := NoFamily)
+		HmiStats Stats (Description := "Statistics to be displayed on HMI");
+		HmiCmds Cmds (Description := "Commands from HMI");
+		HmiCfg Cfg (Description := "Configuration settings from HMI");
+		HmiStatus Status (Description := "Statuses for HMI display");
+	END_DATATYPE
+
+	DATATYPE HmiCfg (FamilyType := NoFamily)
+		DINT Diverters (Description := "Diverters being emulated");
+		DINT PinSpacing (Description := "Distance between pins (mm)");
+		DINT PinWidth (Description := "Diameter of pins (mm)");
+		DINT SorterSpeed (Description := "Sorter target speed (mm/sec)");
+		DINT Accel (Description := "Maximum accel/decel of sorter (mm/sec^2)");
+		SINT ZZZZZZZZZZHmiCfg5 (Hidden := 1);
+		BIT EnableIot ZZZZZZZZZZHmiCfg5 : 0 (Description := "Enable immediate updating of outputs in output mapping");
+		BIT GetMaxMins ZZZZZZZZZZHmiCfg5 : 1 (Description := "Keep track of diverters$' all-time max/min response times");
+	END_DATATYPE
+
+	DATATYPE HmiCmds (FamilyType := NoFamily)
+		DINT TestCommanded (Description := "Test to run");
+		SINT ZZZZZZZZZZHmiCmds1 (Hidden := 1);
+		BIT TestSelect ZZZZZZZZZZHmiCmds1 : 0 (Description := "Activate TestCommanded");
+		BIT Initialize ZZZZZZZZZZHmiCmds1 : 1 (Description := "Simulate S:FS");
+		BIT ResetStats ZZZZZZZZZZHmiCmds1 : 2 (Description := "Reset statistics");
+		BIT ResetScanTimeMax ZZZZZZZZZZHmiCmds1 : 3 (Description := "Reset maximum overall scan time");
+		BIT Start ZZZZZZZZZZHmiCmds1 : 4 (Description := "Start sorter (accel to set speed)");
+		BIT Stop ZZZZZZZZZZHmiCmds1 : 5 (Description := "Stop sorter (decel to 0)");
+	END_DATATYPE
+
+	DATATYPE HmiStats (FamilyType := NoFamily)
+		DINT ScanTimeOverallMax (Description := "Max scan time since last reset (uSeconds)");
+		DINT ScanTimeRollingAvg (Description := "Average of last 10 scan times (uSeconds)");
+		DINT ScanTimeRollingMax (Description := "Longest of last 10 scans (uSeconds)");
+		DINT ScanTimeRollingMin (Description := "Shortest of last 10 scans (uSeconds)");
+	END_DATATYPE
+
+	DATATYPE HmiStatus (FamilyType := NoFamily)
+		DINT Test (Description := "Number of the currently-running emulation test");
+		DINT SpeedSorter (Description := "Speed the sorter is running (mm/sec)");
+		DINT SpeedSet (Description := "Current sorter target speed (mm/sec)");
+	END_DATATYPE
+
+	DATATYPE OverallResponseTime (FamilyType := NoFamily)
+		DivResponseTime Max (Description := "Overall slowest response times");
+		DivResponseTime SlowestDiv (Description := "Overall slowest diverter numbers");
+		DivResponseTime Min (Description := "Overall fastest response times");
+		DivResponseTime FastestDiv (Description := "Overall fastest diverters");
+	END_DATATYPE
+
+	DATATYPE ShoeSorter (FamilyType := NoFamily)
+		DINT SpeedTarget (Description := "Target speed (mm/sec, 0 if stopped)");
+		DINT Position (Description := "uMeters traveled since last pulse");
+		REAL SpeedCurrent (Description := "Currently-running speed (mm/sec)");
+		SINT ZZZZZZZZZZShoeSorter3 (Hidden := 1);
+		BIT AtSpeed ZZZZZZZZZZShoeSorter3 : 0 (Description := "Sorter currently at target speed");
+		BIT Stopped ZZZZZZZZZZShoeSorter3 : 1 (Description := "Sorter speed = 0");
+		BIT Running ZZZZZZZZZZShoeSorter3 : 2 (Description := "Sorter speed > 0");
+	END_DATATYPE
+
+	DATATYPE uSecondTmr (Description := "Microsecond timer object",
+	                     FamilyType := NoFamily)
+		DINT PRE;
+		DINT ACC;
+		SINT ZZZZZZZZZZuSecondTmr2 (Hidden := 1);
+		BIT DN ZZZZZZZZZZuSecondTmr2 : 0 (Description := "High for one scan");
+	END_DATATYPE
+
+	MODULE Local (Parent := "Local",
+	              ParentModPortId := 1,
+	              CatalogNumber := "1756-L83E",
+	              Vendor := 1,
+	              ProductType := 14,
+	              ProductCode := 166,
+	              Major := 30,
+	              Minor := 11,
+	              PortLabel := "RxBACKPLANE",
+	              ChassisSize := 17,
+	              Slot := 0,
+	              Mode := 2#0000_0000_0000_0001,
+	              CompatibleModule := 0,
+	              KeyMask := 2#0000_0000_0000_0000)
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-IB32/B",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 12,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 1,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,16,1,0,0,0,0,0,0,0,0,0,0,0,-1,-1];
+			CONNECTION StandardInput (Rate := 2000,
+			                          EventID := 0)
+					InputData  := [0,-1431655766];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-IB32/B",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 12,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 2,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,16,1,0,0,0,0,0,0,0,0,0,0,0,-1,-1];
+			CONNECTION StandardInput (Rate := 2000,
+			                          EventID := 0)
+					InputData  := [0,-1431655766];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-IB32/B",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 12,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 3,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,16,1,0,0,0,0,0,0,0,0,0,0,0,-1,-1];
+			CONNECTION StandardInput (Rate := 2000,
+			                          EventID := 0)
+					InputData  := [0,-1431655766];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-IB32/B",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 12,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 4,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,16,1,0,0,0,0,0,0,0,0,0,0,0,-1,-1];
+			CONNECTION StandardInput (Rate := 2000,
+			                          EventID := 0)
+					InputData  := [0,11184810];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 5,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 1000,
+			                     EventID := 0)
+					InputData  := [0,0];
+					OutputData  := [0];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 6,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 1000,
+			                     EventID := 0)
+					InputData  := [0,0];
+					OutputData  := [0];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 7,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 1000,
+			                     EventID := 0)
+					InputData  := [0,0];
+					OutputData  := [0];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 8,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 1000,
+			                     EventID := 0)
+					InputData  := [0,0];
+					OutputData  := [0];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 9,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 400,
+			                     EventID := 0)
+					InputData  := [0,0];
+					OutputData  := [0];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 10,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 400,
+			                     EventID := 0)
+					InputData  := [0,0];
+					OutputData  := [0];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 11,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 400,
+			                     EventID := 0)
+					InputData  := [0,0];
+					OutputData  := [0];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 12,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 400,
+			                     EventID := 0)
+					InputData  := [0,335544320];
+					OutputData  := [335544320];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-OB32",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 17,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 14,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,18,1,0,0,0,0,0,0,0];
+			CONNECTION Standard (Rate := 200,
+			                     EventID := 0)
+					InputData  := [0,330];
+					OutputData  := [330];
+			END_CONNECTION
+
+	END_MODULE
+
+	MODULE $NoName (Parent := "Local",
+	            ParentModPortId := 1,
+	            CatalogNumber := "1756-IB32/B",
+	            Vendor := 1,
+	            ProductType := 7,
+	            ProductCode := 12,
+	            Major := 3,
+	            Minor := 1,
+	            PortLabel := "RxBACKPLANE",
+	            Slot := 15,
+	            CommMethod := 536870913,
+	            ConfigMethod := 8388609,
+	            Mode := 2#0000_0000_0000_0000,
+	            CompatibleModule := 1,
+	            KeyMask := 2#0000_0000_0001_1111)
+			ConfigData  := [28,16,1,16,0,0,0,0,0,0,0,0,0,0,-1,-1];
+			CONNECTION StandardInput (Rate := 2000,
+			                          EventID := 0)
+					InputData  := [0,362];
+			END_CONNECTION
+
+	END_MODULE
+
+	ADD_ON_INSTRUCTION_DEFINITION DeltaTime (Description := "Time since last scan, in microseconds, up to a max of 60 seconds.",
+	                                         Revision := "1.0",
+	                                         ExecutePrescan := No,
+	                                         ExecutePostscan := No,
+	                                         ExecuteEnableInFalse := No,
+	                                         CreatedDate := "2018-02-23T19:29:16.719Z",
+	                                         CreatedBy := "PCCC-PC\AT-IL",
+	                                         EditedDate := "2018-02-23T20:23:02.490Z",
+	                                         EditedBy := "PCCC-PC\AT-IL",
+	                                         SoftwareRevision := "v30.00")
+		PARAMETERS
+			EnableIn : BOOL (Description := "Enable Input - System Defined Parameter",
+			                    Usage := Input,
+			                    RADIX := Decimal,
+			                    Required := No,
+			                    Visible := No,
+			                    ExternalAccess := Read Only);
+			EnableOut : BOOL (Description := "Enable Output - System Defined Parameter",
+			                     Usage := Output,
+			                     RADIX := Decimal,
+			                     Required := No,
+			                     Visible := No,
+			                     ExternalAccess := Read Only);
+			ElapsedMicroseconds : DINT (Description := "Microseconds since AOI last called.",
+			                               Usage := Output,
+			                               RADIX := Decimal,
+			                               Required := Yes,
+			                               Visible := Yes,
+			                               ExternalAccess := Read Only,
+			                               DefaultData := 0);
+		END_PARAMETERS
+
+		LOCAL_TAGS
+			Time : DINT[7] (RADIX := Decimal,
+			               ExternalAccess := None,
+			               DefaultData := "[0,0,0,0,0,0,0]");
+			Timestamp : DINT (RADIX := Decimal,
+			                    ExternalAccess := None,
+			                    DefaultData := 0);
+			temp : DINT (RADIX := Decimal,
+			               ExternalAccess := None,
+			               DefaultData := 0);
+			Timestamp_Last : DINT (RADIX := Decimal,
+			                         ExternalAccess := None,
+			                         DefaultData := 0);
+		END_LOCAL_TAGS
+
+		ST_ROUTINE Logic (Description := "Time since last scan, in microseconds, up to a max of 60 seconds.")
+			'//Create a microsecond timestamp that loops every minute
+			'
+			'//Get current microsend
+			'//Time[5] = seconds, Time[6] = microseconds
+			'GSV(WallClockTime, , LocalDateTime, Time[0]);
+			'Timestamp := Time[5]*1000000 + Time[6];
+			'
+			'//Calculate time since the timestamp generated on last execution
+			'temp := Timestamp - Timestamp_Last;
+			'IF temp < 0 THEN temp := temp + 60000000; END_IF;
+			'Timestamp_Last := Timestamp;
+			'
+			'//Set output
+			'ElapsedMicroseconds := temp;
+		END_ST_ROUTINE
+
+	END_ADD_ON_INSTRUCTION_DEFINITION
+
+	ADD_ON_INSTRUCTION_DEFINITION MicroTmr (Description := "Processes a microsecond timer.",
+	                                        Revision := "1.0",
+	                                        ExecutePrescan := No,
+	                                        ExecutePostscan := No,
+	                                        ExecuteEnableInFalse := No,
+	                                        CreatedDate := "2018-02-27T16:46:03.356Z",
+	                                        CreatedBy := "PCCC-PC\AT-IL",
+	                                        EditedDate := "2018-02-27T17:10:32.400Z",
+	                                        EditedBy := "PCCC-PC\AT-IL",
+	                                        SoftwareRevision := "v30.00",
+	                                        AdditionalHelpText := "Requires an $Qelapsed time$Q input, in microseconds.  This is the time since the MicroTmr was last processed.  A single $QDeltaTime$Q function should be called right before the MicroTmr for maximum precision.$N$NKeep in mind the maximum value of a DINT (don$'t use this for long timers).$N$N**Auto-resets the DN bit after 1 scan.** Value in .ACC is reset at the same time as .DN bit is set.  To see what value the accumulator reached on the .DN scan, simply add .ACC and .PRE.$N$NIt is not required, but the AOI was designed to be called every scan.")
+		PARAMETERS
+			EnableIn : BOOL (Description := "Enable Input - System Defined Parameter",
+			                    Usage := Input,
+			                    RADIX := Decimal,
+			                    Required := No,
+			                    Visible := No,
+			                    ExternalAccess := Read Only);
+			EnableOut : BOOL (Description := "Enable Output - System Defined Parameter",
+			                     Usage := Output,
+			                     RADIX := Decimal,
+			                     Required := No,
+			                     Visible := No,
+			                     ExternalAccess := Read Only);
+			Timer : uSecondTmr (Usage := InOut,
+			                 Required := Yes,
+			                 Visible := Yes);
+			ElapsedMicroseconds : DINT (Usage := Input,
+			                               RADIX := Decimal,
+			                               Required := Yes,
+			                               Visible := Yes,
+			                               DefaultData := 0);
+		END_PARAMETERS
+
+		LOCAL_TAGS
+		END_LOCAL_TAGS
+
+		ST_ROUTINE Logic (Description := "Timer processor for microsecond timers that operates differently from built-in TON instructions.  Should be called every scan. Requires an $Qelapsed time$Q input and auto-resets once DN bit has been on for 1 scan.")
+			'//Update accumulator
+			'Timer.ACC := Timer.ACC + ElapsedMicroseconds;
+			'
+			'//Once preset value is reached, set "done" bit and reset accumulator
+			'//Don't set .ACC to 0, since more than the preset time may have elapsed since last scanned; sub .PRE instead
+			'IF Timer.ACC >= Timer.PRE THEN 
+			'	Timer.ACC := Timer.ACC - Timer.PRE;
+			'	Timer.DN := 1;
+			'ELSE
+			'	Timer.DN := 0;
+			'END_IF;
+		END_ST_ROUTINE
+
+	END_ADD_ON_INSTRUCTION_DEFINITION
+
+	TAG
+		CfgDivert_Offset : DINT[100] (RADIX := Decimal) := [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+				,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+	END_TAG
+
+	PROGRAM MainPeriodic (MAIN := "MainProgram",
+	                      MODE := 0,
+	                      DisableFlag := 0,
+	                      UseAsFolder := 0)
+		TAG
+		END_TAG
+
+		ST_ROUTINE MainProgram 
+			'
+		END_ST_ROUTINE
+
+		CHILD_PROGRAMS
+		END_CHILD_PROGRAMS
+
+	END_PROGRAM
+
+	PROGRAM MainProgram (MAIN := "MainRoutine",
+	                     MODE := 0,
+	                     DisableFlag := 0,
+	                     UseAsFolder := 0)
+		TAG
+		END_TAG
+
+		ST_ROUTINE Emulate 
+			'//Update sorter speed
+			'JSR(Sorter_Speed);
+			'JSR(Encoder);
+			'JSR(UpdateTracking);
+			'
+			'//Execute selected test
+			'CASE CurrentTest OF
+			'	0: //Do nothing
+			'	1: JSR(Test_01);
+			'	2: JSR(Test_02);
+			'END_CASE;
+		END_ST_ROUTINE
+
+		ST_ROUTINE Encoder 
+			'//Update encoder position
+			'Sorter.Position := Sorter.Position + (Sorter.SpeedCurrent / 1000 * uSecondsElapsed);
+			'
+			'//Generate encoder pulse if encoder has traveled far enough
+			'IF Sorter.Position >= CfgGeneral.Resolution THEN
+			'	EncoderPulseEvent := 1;
+			'	Sorter.Position := Sorter.Position - CfgGeneral.Resolution;
+			'ELSIF Sorter.Position < CfgGeneral.Resolution THEN
+			'	EncoderPulseEvent := 0;
+			'END_IF;
+		END_ST_ROUTINE
+
+		ROUTINE Hmi 
+				RC: "Move HMI.Cfg -> Cfg.General";
+				N: MOV(Hmi.Cfg.Accel,CfgGeneral.Acceleration)MOV(Hmi.Cfg.SorterSpeed,CfgGeneral.SorterSpeed)MOV(Hmi.Cfg.Diverters,CfgGeneral.Diverters)MOV(Hmi.Cfg.PinSpacing,CfgGeneral.PinSpacing)MOV(Hmi.Cfg.PinWidth,CfgGeneral.PinWidth);
+				RC: "Status Display";
+				N: MOV(CurrentTest,Hmi.Status.Test)MOV(Sorter.SpeedCurrent,Hmi.Status.SpeedSorter)MOV(Sorter.SpeedTarget,Hmi.Status.SpeedSet);
+				RC: "Update currently running test";
+				N: XIC(Hmi.Cmds.TestSelect)MOV(Hmi.Cmds.TestCommanded,CurrentTest);
+				N: [XIC(Hmi.Cmds.Start) MOV(CfgGeneral.SorterSpeed,Sorter.SpeedTarget) OTU(Hmi.Cmds.Start) ,XIC(Hmi.Cmds.Stop) CLR(Sorter.SpeedTarget) OTU(Hmi.Cmds.Stop) ];
+				RC: "Reset Max Scan Time";
+				N: XIC(Hmi.Cmds.ResetScanTimeMax)[CLR(Hmi.Stats.ScanTimeOverallMax) ,OTU(Hmi.Cmds.ResetScanTimeMax) ];
+		END_ROUTINE
+
+		ST_ROUTINE Init 
+			'FOR i := 1 TO CfgGeneral.Diverters BY 1 DO
+			'	//Reset output commands
+			'	Divert[i].Out_Prox1 := 0;
+			'	Divert[i].Out_Prox2 := 0;
+			'END_FOR;
+		END_ST_ROUTINE
+
+		ST_ROUTINE InputMapping 
+			'FOR i := 0 TO 15 BY 1 DO
+			'	Divert[i+1].In_Extend := Local:1:I.Data.[i*2];
+			'	Divert[i+1].In_Retract := Local:1:I.Data.[i*2+1];
+			'
+			'	Divert[i+17].In_Extend := Local:2:I.Data.[i*2];
+			'	Divert[i+17].In_Retract := Local:2:I.Data.[i*2+1];
+			'
+			'	Divert[i+33].In_Extend := Local:3:I.Data.[i*2];
+			'	Divert[i+33].In_Retract := Local:3:I.Data.[i*2+1];
+			'	
+			'	IF i <= 11 THEN	//stop at divert 60
+			'		Divert[i+49].In_Extend := Local:4:I.Data.[i*2];
+			'		Divert[i+49].In_Retract := Local:4:I.Data.[i*2+1];
+			'	END_IF;
+			'END_FOR;
+		END_ST_ROUTINE
+
+		ST_ROUTINE MainRoutine 
+			'IF S:FS OR Hmi.Cmds.Initialize THEN
+			'	JSR(Init);
+			'	Hmi.Cmds.Initialize := 0;
+			'END_IF;
+			'
+			'
+			'JSR(ScanTime);
+			'JSR(InputMapping);
+			'JSR(Hmi);
+			'JSR(Emulate);
+			'JSR(OutputMapping);
+			'
+			'IF Hmi.Cmds.ResetStats THEN
+			'	JSR(ResetStats);
+			'	Hmi.Cmds.ResetStats := 0;
+			'END_IF;
+			'
+			'
+		END_ST_ROUTINE
+
+		ST_ROUTINE OutputMapping 
+			'FOR i := 0 TO 15 BY 1 DO
+			'	Local:9:O.Data.[i*2] := Divert[i+1].Out_Prox1;
+			'	Local:9:O.Data.[i*2+1] := Divert[i+1].Out_Prox2;
+			'                                                 
+			'	Local:10:O.Data.[i*2] := Divert[i+17].Out_Prox1;
+			'	Local:10:O.Data.[i*2+1] := Divert[i+17].Out_Prox2;
+			'                                                 
+			'	Local:11:O.Data.[i*2] := Divert[i+33].Out_Prox1;
+			'	Local:11:O.Data.[i*2+1] := Divert[i+33].Out_Prox2;
+			'                                                 
+			'	Local:12:O.Data.[i*2] := Divert[i+49].Out_Prox1;
+			'	Local:12:O.Data.[i*2+1] := Divert[i+49].Out_Prox2;
+			'END_FOR;
+		END_ST_ROUTINE
+
+		ST_ROUTINE ResetStats 
+			'SIZE(Divert[0], 0, ArySize);
+			'FOR i := 0 TO ArySize - 1 BY 1 DO
+			'	DivertStats[i].LastResponse.ExtendOn := 0;
+			'	DivertStats[i].MinResponse.ExtendOn := 10000;
+			'	DivertStats[i].MaxResponse.ExtendOn := 0;
+			'	DivertStats[i].LastResponse.ExtendOff := 0;
+			'	DivertStats[i].MinResponse.ExtendOff := 10000;
+			'	DivertStats[i].MaxResponse.ExtendOff := 0;
+			'
+			'	DivertStats[i].LastResponse.RetractOn := 0;
+			'	DivertStats[i].MinResponse.RetractOn := 10000;
+			'	DivertStats[i].MaxResponse.RetractOn := 0;
+			'	DivertStats[i].LastResponse.RetractOff := 0;
+			'	DivertStats[i].MinResponse.RetractOff := 10000;
+			'	DivertStats[i].MaxResponse.RetractOff := 0;
+			'
+			'	Divert[i].WaitingForExtendOn := 0;
+			'	Divert[i].WaitingForRetractOff := 0;
+			'	Divert[i].WaitingForExtendOff := 0;
+			'	Divert[i].WaitingForRetractOn := 0;
+			'END_FOR;
+			'
+			'//Reset min/max response times
+			'_MaxExtendOn := 0;
+			'_MaxExtendOff := 0;
+			'_MaxRetractOn := 0;
+			'_MaxRetractOff := 0;
+			'
+			'_MinExtendOn := 10000;
+			'_MinExtendOff := 10000;
+			'_MinRetractOn := 10000;
+			'_MinRetractOff := 10000;
+		END_ST_ROUTINE
+
+		ST_ROUTINE ScanTime 
+			'//Get elapsed time since last scan
+			'DeltaTime(AtAoiDeltaTime, uSecondsElapsed);
+			'
+			'//Update ScanTime shift register
+			'FOR i := 8 TO 0 BY -1 DO
+			'	ScanTimeArray[i+1] := ScanTimeArray[i];
+			'END_FOR;
+			'ScanTimeArray[0] := uSecondsElapsed;
+			'
+			'//Calculate Avg, Max, and Min of rolling scan time array
+			'RunningSum := 0;
+			'TempLocalMax := 0;
+			'TempLocalMin := 10000;
+			'FOR i := 0 TO 9 BY 1 DO
+			'	RunningSum := RunningSum + ScanTimeArray[i];
+			'	IF ScanTimeArray[i] > TempLocalMax THEN TempLocalMax := ScanTimeArray[i]; END_IF;
+			'	IF ScanTimeArray[i] < TempLocalMin THEN TempLocalMin := ScanTimeArray[i]; END_IF;
+			'END_FOR;
+			'Hmi.Stats.ScanTimeRollingAvg := RunningSum/10;
+			'Hmi.Stats.ScanTimeRollingMax := TempLocalMax;
+			'Hmi.Stats.ScanTimeRollingMin := TempLocalMin;
+			'
+			'//Set all-time scan time high
+			'IF uSecondsElapsed > Hmi.Stats.ScanTimeOverallMax THEN Hmi.Stats.ScanTimeOverallMax := uSecondsElapsed; END_IF;
+		END_ST_ROUTINE
+
+		ST_ROUTINE Sorter_Speed 
+			'//Update sorter's current speed
+			'IF Sorter.SpeedCurrent = Sorter.SpeedTarget THEN
+			'	Sorter.AtSpeed := 1;
+			'ELSIF Sorter.SpeedTarget > Sorter.SpeedCurrent THEN
+			'	Sorter.SpeedCurrent := Sorter.SpeedCurrent + (CfgGeneral.Acceleration * uSecondsElapsed / 1000 / 1000);
+			'	IF Sorter.SpeedCurrent > Sorter.SpeedTarget THEN 
+			'		Sorter.SpeedCurrent := Sorter.SpeedTarget; 
+			'	END_IF;
+			'ELSIF Sorter.SpeedTarget < Sorter.SpeedCurrent THEN
+			'	Sorter.SpeedCurrent := Sorter.SpeedCurrent - (CfgGeneral.Acceleration * uSecondsElapsed / 1000 / 1000);
+			'	IF Sorter.SpeedCurrent < Sorter.SpeedTarget THEN
+			'		Sorter.SpeedCurrent := Sorter.SpeedTarget;
+			'	END_IF;
+			'END_IF;
+			'
+			'//Update sorter Running/Stopped status
+			'IF Sorter.SpeedCurrent > 50 THEN
+			'	Sorter.Stopped := 0;
+			'	Sorter.Running := 1;
+			'ELSIF Sorter.SpeedCurrent <= 50 THEN
+			'	Sorter.Stopped := 1;
+			'	Sorter.Running := 0;
+			'END_IF;
+			'
+			'
+			'(*For reference only--not intending for these to be used in a significant way -IPL 4/2/18*)
+			'//Calculate time from pin to pin at current speed
+			'IF Sorter.Running THEN
+			'	temp := (CfgGeneral.PinSpacing * 1000 * 1000);		//scale up for uSecond conversion (do first to avoid loss of precision on data conversion)
+			'	PinToPinTime := temp/Sorter.SpeedCurrent;
+			'END_IF;
+			'
+			'//Calculate time the pin detects should stay on at current speed (uSeconds)
+			'IF Sorter.Running THEN
+			'	temp := (CfgGeneral.PinWidth + 4) * 1000 * 1000;	//Add 4mm to account for prox width, scale up for uSecond conversion
+			'	ProxOnTime := temp / Sorter.SpeedCurrent;
+			'END_IF;
+		END_ST_ROUTINE
+
+		ST_ROUTINE Test_01 (Description := "Simple loopback timing test.  Records delay between turning output on and corresponding input turning on.  DCM test PLC should be configured to turn on divert output when prox input is on.")
+			'//Future use
+		END_ST_ROUTINE
+
+		ST_ROUTINE Test_02 
+			'//Future use
+		END_ST_ROUTINE
+
+		ST_ROUTINE UpdateTracking 
+			'IF NOT EncoderPulseEvent THEN 
+			'	TND(); 
+			'END_IF;
+			'
+			'FOR i := CfgGeneral.Length / CfgGeneral.Resolution TO 1 BY -1 DO
+			'	TrackFile[i] := TrackFile[i-1];
+			'END_FOR;
+		END_ST_ROUTINE
+
+		CHILD_PROGRAMS
+		END_CHILD_PROGRAMS
+
+	END_PROGRAM
+
+	TASK MainTask (Type := CONTINUOUS,
+	               Rate := 10,
+	               Priority := 10,
+	               Watchdog := 500,
+	               DisableUpdateOutputs := No,
+	               InhibitTask := No)
+			MainProgram;
+	END_TASK
+
+	TASK MsgPeriodic (Type := PERIODIC,
+	                  Rate := 10,
+	                  Priority := 15,
+	                  Watchdog := 500,
+	                  DisableUpdateOutputs := Yes,
+	                  InhibitTask := Yes)
+			MainPeriodic;
+	END_TASK
+
+CONFIG CST(SystemTimeMasterID := 0) END_CONFIG
+
+CONFIG EthernetPort1(Label := "1",
+	                             PortEnabled := 1) END_CONFIG
+
+CONFIG TimeSynchronize(Priority1 := 128,
+	                                 Priority2 := 128,
+	                                 PTPEnable := 0) END_CONFIG
+
+CONFIG WallClockTime(LocalTimeAdjustment := 0,
+	                     TimeZone := 0) END_CONFIG
+
+END_CONTROLLER
+
